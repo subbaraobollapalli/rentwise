@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import '../core/models/app_page.dart';
 import '../features/dashboard/dashboard_page.dart';
 import '../features/properties/pages/property_page.dart';
+import '../widgets/app_header.dart';
+import '../widgets/app_sidebar.dart';
+import '../features/properties/pages/unit_property_selection_page.dart';
+import '../features/tenants/pages/tenants_page.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -29,7 +33,10 @@ class _HomeShellState extends State<HomeShell> {
         return const PropertyPage();
 
       case AppPage.units:
+         return const UnitPropertySelectionPage();
+
       case AppPage.tenants:
+        return const TenantsPage();
       case AppPage.billing:
       case AppPage.reports:
       case AppPage.settings:
@@ -48,7 +55,26 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: currentPage,
+      body: Row(
+        children: [
+          AppSidebar(
+            selectedPage: _currentPage,
+            onPageSelected: changePage,
+          ),
+
+          Expanded(
+            child: Column(
+              children: [
+                const AppHeader(),
+
+                Expanded(
+                  child: currentPage,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

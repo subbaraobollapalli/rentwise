@@ -1,0 +1,723 @@
+import 'package:flutter/material.dart';
+
+import '../../../core/models/property.dart';
+import '../../tenants/models/tenant.dart';
+import '../../tenants/services/tenant_store.dart';
+import '../models/unit.dart';
+import '../services/unit_store.dart';
+
+class UnitPage extends StatefulWidget {
+  final Property property;
+
+  const UnitPage({
+    super.key,
+    required this.property,
+  });
+
+  @override
+  State<UnitPage> createState() => _UnitPageState();
+}
+
+class _UnitPageState extends State<UnitPage> {
+  List<Unit> get _units {
+    return UnitStore.instance.getUnits(widget.property.id);
+  }
+
+  Future<void> _addUnit() async {
+    final unit = await showDialog<Unit>(
+      context: context,
+      builder: (_) => _AddUnitDialog(
+        propertyId: widget.property.id,
+      ),
+    );
+
+    if (unit == null) return;
+
+    UnitStore.instance.addUnit(unit);
+
+    setState(() {});
+  }
+
+  Future<void> _checkIn(Unit unit) async {
+    final tenant = await showDialog<Tenant>(
+      context: context,
+      builder: (_) => _CheckInDialog(
+        propertyId: widget.property.id,
+        unitId: unit.id,
+        defaultAdvance: unit.defaultAdvance,
+        defaultRent: unit.rent,
+      ),
+    );
+
+    if (tenant == null) return;
+
+    TenantStore.instance.addTenant(tenant);
+
+    UnitStore.instance.occupyUnit(
+      unit.id,
+      tenant.advanceCollected,
+      tenant.advanceDate,
+    );
+
+    setState(() {});
+  }
+
+  void _showUnitDetails(Unit unit) {
+    final tenant = TenantStore.instance.getTenantForUnit(unit.id);
+
+    showDialog<void>(
+      context: context,
+      builder: (_) => _UnitDetailsDialog(
+        unit: unit,
+        tenant: tenant,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final units = _units;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F6FA),
+      appBar: AppBar(
+        title: Text('${widget.property.name} - Units'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Units',
+                  style: TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _addUnit,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Unit'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: units.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No units defined for ${widget.property.name}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: units.length,
+                      itemBuilder: (context, index) {
+                        final unit = units[index];
+
+                        return Card(
+                          child: ListTile(
+                            onTap: () => _showUnitDetails(unit),
+                            leading: CircleAvatar(
+                              child: Icon(
+                                unit.occupied
+                                    ? Icons.person
+                                    : Icons.meeting_room,
+                              ),
+                            ),
+                            title: Text(unit.name),
+                            subtitle: Text(
+                              '${unit.type} • '
+                              '₹${unit.rent.toStringAsFixed(0)}',
+                            ),
+                            trailing: unit.occupied
+                                ? const Text(
+                                    'Occupied',
+                                    style: TextStyle(
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  )
+                                : ElevatedButton(
+                                    onPressed: () => _checkIn(unit),
+                                    child: const Text('Check-in'),
+                                  ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UnitDetailsDialog extends StatelessWidget {
+  final Unit unit;
+  final Tenant? tenant;
+
+  const _UnitDetailsDialog({
+    required this.unit,
+    required this.tenant,
+  });
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return '-';
+
+    return '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/'
+        '${date.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(unit.name),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _DetailRow(
+                label: 'Type',
+                value: unit.type,
+              ),
+              _DetailRow(
+                label: 'Monthly Rent',
+                value: '₹${unit.rent.toStringAsFixed(0)}',
+              ),
+              _DetailRow(
+                label: 'Default Advance',
+                value: '₹${unit.defaultAdvance.toStringAsFixed(0)}',
+              ),
+              _DetailRow(
+                label: 'Status',
+                value: unit.occupied ? 'Occupied' : 'Vacant',
+              ),
+              if (unit.occupied) ...[
+                const Divider(height: 24),
+                if (tenant != null) ...[
+                  _DetailRow(
+                    label: 'Tenant',
+                    value: tenant!.name,
+                  ),
+                  _DetailRow(
+                    label: 'Phone',
+                    value: tenant!.phone,
+                  ),
+                  _DetailRow(
+                    label: 'Check-in Date',
+                    value: _formatDate(tenant!.checkInDate),
+                  ),
+                  _DetailRow(
+                    label: 'Rent Start Date',
+                    value: _formatDate(tenant!.rentStartDate),
+                  ),
+                ],
+                _DetailRow(
+                  label: 'Advance Collected',
+                  value:
+                      '₹${unit.advanceCollected.toStringAsFixed(0)}',
+                ),
+                _DetailRow(
+                  label: 'Advance Date',
+                  value: _formatDate(unit.advanceCollectedDate),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _DetailRow({
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 150,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<Unit?> showAddUnitDialog(
+  BuildContext context,
+  String propertyId,
+  double defaultRent,
+) {
+  return showDialog<Unit>(
+    context: context,
+    builder: (_) => _AddUnitDialog(
+      propertyId: propertyId,
+      defaultRent: defaultRent,
+    ),
+  );
+}
+Future<Unit?> showAddUnitDialog(
+  BuildContext context,
+  String propertyId,
+) {
+  return showDialog<Unit>(
+    context: context,
+    builder: (_) => _AddUnitDialog(
+      propertyId: propertyId,
+    ),
+  );
+}
+class _AddUnitDialog extends StatefulWidget {
+  final String propertyId;
+
+  const _AddUnitDialog({
+    required this.propertyId,
+  });
+
+  @override
+  State<_AddUnitDialog> createState() => _AddUnitDialogState();
+}
+
+class _AddUnitDialogState extends State<_AddUnitDialog> {
+  final _formKey = GlobalKey<FormState>();
+
+  final _nameController = TextEditingController();
+  final _typeController = TextEditingController();
+  final _rentController = TextEditingController();
+  final _advanceController = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _typeController.dispose();
+    _rentController.dispose();
+    _advanceController.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    if (!_formKey.currentState!.validate()) return;
+
+    final unit = Unit(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      propertyId: widget.propertyId,
+      name: _nameController.text.trim(),
+      type: _typeController.text.trim(),
+      rent: double.parse(_rentController.text),
+      defaultAdvance: double.parse(_advanceController.text),
+    );
+
+    Navigator.pop(context, unit);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add Unit'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Unit / Portion Name',
+                  ),
+                  validator: (value) =>
+                      value == null || value.trim().isEmpty
+                          ? 'Enter unit name'
+                          : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _typeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Type',
+                    hintText: 'Example: 2 BHK / Shop',
+                  ),
+                  validator: (value) =>
+                      value == null || value.trim().isEmpty
+                          ? 'Enter unit type'
+                          : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _rentController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Monthly Rent',
+                    prefixText: '₹ ',
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Enter monthly rent';
+                    }
+
+                    final rent = double.tryParse(value);
+
+                    if (rent == null || rent <= 0) {
+                      return 'Enter a valid rent';
+                    }
+
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _advanceController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Default Advance',
+                    prefixText: '₹ ',
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Enter default advance';
+                    }
+
+                    final advance = double.tryParse(value);
+
+                    if (advance == null || advance < 0) {
+                      return 'Enter a valid advance';
+                    }
+
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _save,
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+Future<Tenant?> showCheckInDialog(
+  BuildContext context, {
+  required String propertyId,
+  required String unitId,
+  required double defaultAdvance,
+}) {
+  return showDialog<Tenant>(
+    context: context,
+    builder: (_) => _CheckInDialog(
+      propertyId: propertyId,
+      unitId: unitId,
+      defaultAdvance: defaultAdvance,
+    ),
+  );
+}
+
+class _CheckInDialog extends StatefulWidget {
+  final String propertyId;
+  final String unitId;
+  final double defaultAdvance;
+  final double defaultRent;
+
+  const _CheckInDialog({
+    required this.propertyId,
+    required this.unitId,
+    required this.defaultAdvance,
+    required this.defaultRent,
+    defaultRent: unit.rent,
+  });
+
+  @override
+  State<_CheckInDialog> createState() => _CheckInDialogState();
+}
+
+class _CheckInDialogState extends State<_CheckInDialog> {
+  final _formKey = GlobalKey<FormState>();
+
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _advanceController = TextEditingController();
+
+  DateTime _checkInDate = DateTime.now();
+  DateTime _rentStartDate = DateTime.now();
+  DateTime _advanceDate = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+
+    _advanceController.text =
+        widget.defaultAdvance.toStringAsFixed(0);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    _advanceController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _selectCheckInDate() async {
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _checkInDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+
+    if (selected == null) return;
+
+    setState(() {
+      _checkInDate = selected;
+
+      if (_rentStartDate.isBefore(_checkInDate)) {
+        _rentStartDate = _checkInDate;
+      }
+    });
+  }
+
+  Future<void> _selectRentStartDate() async {
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _rentStartDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+
+    if (selected == null) return;
+
+    setState(() {
+      _rentStartDate = selected;
+    });
+  }
+
+  Future<void> _selectAdvanceDate() async {
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _advanceDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+
+    if (selected == null) return;
+
+    setState(() {
+      _advanceDate = selected;
+    });
+  }
+
+  
+
+  void _save() {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_rentStartDate.isBefore(_checkInDate)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Rent Start Date cannot be before Check-in Date.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final tenant = Tenant(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: _nameController.text.trim(),
+      phone: _phoneController.text.trim(),
+      unitId: widget.unitId,
+      propertyId: widget.propertyId,
+      advanceCollected:
+          double.parse(_advanceController.text),
+      advanceDate: _advanceDate,
+      checkInDate: _checkInDate,
+      rentStartDate: _rentStartDate,
+    );
+
+    Navigator.pop(context, tenant);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Tenant Check-in'),
+      content: SizedBox(
+        width: 420,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxHeight: 520,
+          ),
+          child: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Tenant Name',
+                    ),
+                    validator: (value) =>
+                        value == null ||
+                                value.trim().isEmpty
+                            ? 'Enter tenant name'
+                            : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Phone Number',
+                    ),
+                    validator: (value) =>
+                        value == null ||
+                                value.trim().isEmpty
+                            ? 'Enter phone number'
+                            : null,
+                  ),
+                  const SizedBox(height: 16),
+                  _DateField(
+                    label: 'Check-in Date',
+                    date: _checkInDate,
+                    onTap: _selectCheckInDate,
+                  ),
+                  const SizedBox(height: 8),
+                  _DateField(
+                    label: 'Rent Start Date',
+                    date: _rentStartDate,
+                    onTap: _selectRentStartDate,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _advanceController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Advance Collected',
+                      prefixText: '₹ ',
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Enter advance amount';
+                      }
+
+                      final advance = double.tryParse(value);
+
+                      if (advance == null || advance < 0) {
+                        return 'Enter a valid amount';
+                      }
+
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  _DateField(
+                    label: 'Advance Collection Date',
+                    date: _advanceDate,
+                    onTap: _selectAdvanceDate,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _save,
+          child: const Text('Check-in'),
+        ),
+      ],
+    );
+  }
+}
+
+class _DateField extends StatelessWidget {
+  final String label;
+  final DateTime date;
+  final VoidCallback onTap;
+
+  const _DateField({
+    required this.label,
+    required this.date,
+    required this.onTap,
+  });
+
+  String _formatDate(DateTime value) {
+    return '${value.day.toString().padLeft(2, '0')}/'
+        '${value.month.toString().padLeft(2, '0')}/'
+        '${value.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      subtitle: Text(_formatDate(date)),
+      trailing: const Icon(Icons.calendar_today),
+      onTap: onTap,
+    );
+  }
+}
